@@ -27,7 +27,7 @@ gROOT.Reset()
 f1 = TFile(options.inFile)
 f1.cd(options.dir)
 tree = f1.Get(options.dir+"/"+options.tree)
-tree.MakeCode(options.inFile.rstrip(".root")+".C")
+tree.MakeClass("intermediate")
 
 log_h = open(options.AnaName+".h", "w")
 
@@ -54,6 +54,7 @@ print >> log_h, "#include <TFile.h>"
 print >> log_h, "#include <TBranch.h>"
 print >> log_h, "#include <TApplication.h>"
 print >> log_h, "#include <TTree.h>"
+print >> log_h, "#include <TChain.h>"
 print >> log_h, ""
 print >> log_h, "using namespace std;"
 print >> log_h, ""
@@ -66,15 +67,15 @@ print >> log_h, "   void setBranchAddress(TTree* "+options.tree+");"
 
 ReadLeaves=0
 
-with open(options.inFile.rstrip(".root")+".C") as f:
+with open("intermediate.h") as f:
     for line in f:	
     	if ReadLeaves==1:
-		if line.find("// Set branch addresses.")!=-1:
+		if line.find("intermediate(TTree *tree=0);")!=-1:
 			print >> log_h, "};"
 			print >> log_h, "#endif"
 			break
 		print >> log_h, line.rstrip("\n")
-    	if line.find("//Declaration of leaves types")!=-1:
+    	if line.find("// Declaration of leaf types")!=-1:
 		ReadLeaves=1
     
 print "writing "+options.AnaName+".cc"
@@ -88,7 +89,7 @@ print >> log_cc, "{"
 print >> log_cc, ""
 print >> log_cc, "  TApplication app(\"App\",&argc, argv);"
 print >> log_cc, "  gROOT->ProcessLine(\"#include <vector>\");"
-print >> log_cc, "  "+options.AnaName+" "+options.AnaName+";"
+print >> log_cc, "  "+options.AnaName+" "+options.AnaName+"_;"
 print >> log_cc, ""
 print >> log_cc, "}"
 print >> log_cc, ""+options.AnaName+"::"+options.AnaName+"()"
@@ -104,12 +105,14 @@ print >> log_cc, ""
 print >> log_cc, "  for (int i = 0; i < nentries; ++i)"  
 print >> log_cc, "    {"
 print >> log_cc, "       "+options.tree+"->GetEntry(i);"
-print >> log_cc, "       for (int j = 0; j < Muon_pt.size(); j++)"
+print >> log_cc, "       for (int j = 0; j < Muon_pt->size(); j++)"
 print >> log_cc, "         {"
-print >> log_cc, "            cout <<Muon_pt.at(j)<<endl;"
+print >> log_cc, "            if(Muon_pt->at(j)==0) break;"
+print >> log_cc, "            cout <<Muon_pt->at(j)<<endl;"
 print >> log_cc, "         }"
 print >> log_cc, "     }"
-print >> log_cc, ""
+print >> log_cc, "  cout<<\"all muons done\"<<endl;"
+print >> log_cc, "  f->Close();"
 print >> log_cc, "}"
 print >> log_cc, ""
 print >> log_cc, ""+options.AnaName+"::~"+options.AnaName+"()"
@@ -125,17 +128,27 @@ print >> log_cc, ""
 
 ReadBranches=0
 
-with open(options.inFile.rstrip(".root")+".C") as f:
+with open("intermediate.h") as f:
 	for line in f:	
     		if ReadBranches==1:
-			if line.find("//     This is the loop skeleton")!=-1:
+			if line.find("fChain = tree;")!=-1:
+				#print >> log_cc, "   fChain = "+options.tree
+				continue
+			if line.find("fCurrent = -1")!=-1:
+				continue
+			if line.find("fChain->SetMakeClass(1);")!=-1:
+				continue		
+			if line.find("if (!tree) return;")!=-1:
+				print >> log_cc, "   if(!"+options.tree+") return;"
+				continue				
+			if line.find("Notify();")!=-1:
 				print >> log_cc, "};"
 				break
-			print >> log_cc, line.rstrip("\n")				
-    		if line.find("// Set branch addresses.")!=-1:
+			print >> log_cc, (line.replace("fChain", options.tree)).rstrip("\n")				
+    		if line.find("// (once per file to be processed).")!=-1:
 			ReadBranches=1
 		
-os.system("rm "+options.inFile.rstrip(".root")+".C")		
+os.system("rm intermediate.C intermediate.h")		
 		
 print "All done! Run: \"make "+options.AnaName+" to compile the analyzer skeleton"		
 
