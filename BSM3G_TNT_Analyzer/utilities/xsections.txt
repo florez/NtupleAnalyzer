@@ -1,0 +1,2 @@
+# sample xsection efficiency 
+Output 2 1
