@@ -1,0 +1,9 @@
+1. git clone https://github.com/florez/NtupleAnalyzer
+
+2. cd BSM3G_TNT_simpleTemplete_Analyzer
+
+3. Need to have an ntuple file from the TNT maker to test the code.
+
+3. make BSM_Analysis
+
+4. ./BSM_Analysis
