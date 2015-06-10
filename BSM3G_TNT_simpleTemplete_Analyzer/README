@@ -6,4 +6,4 @@
 
 3. make BSM_Analysis
 
-4. ./BSM_Analysis
+4. ./BSM_Analysis INPUT_FILE OUTPUT_FILE
