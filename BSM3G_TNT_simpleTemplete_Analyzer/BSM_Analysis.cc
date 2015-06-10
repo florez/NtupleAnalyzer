@@ -1,11 +1,10 @@
 #include "BSM_Analysis.h"
-#include "interface/selection.h"
 
 int main (int argc, char *argv[])
 {
 
-  TApplication app("App",&argc, argv);
-  TFile * MassHisto = new TFile("MassHisto.root", "RECREATE");  
+  //TApplication app("App",&argc, argv);
+  TFile * MassHisto = new TFile(argv[2], "RECREATE");  
   int nDir = 10;
   TDirectory *theDirectory[nDir];
   theDirectory[0] = MassHisto->mkdir("AfterMuonChargeProduct");
@@ -18,10 +17,11 @@ int main (int argc, char *argv[])
   theDirectory[7] = MassHisto->mkdir("AfterTau_AgainstMuonTight2");
   theDirectory[8] = MassHisto->mkdir("AfterTau_AgainstMuonTight3");
   theDirectory[9] = MassHisto->mkdir("AfterTau_byTightIsolationMVA3newDMwLT");
-  BSM_Analysis BSM_Analysis_(MassHisto, theDirectory, nDir);
+  cout <<argv[1]<<endl;
+  BSM_Analysis BSM_Analysis_(MassHisto, theDirectory, nDir, argv[1]);
 }
 
-BSM_Analysis::BSM_Analysis(TFile* theFile, TDirectory *cdDir[], int nDir) 
+BSM_Analysis::BSM_Analysis(TFile* theFile, TDirectory *cdDir[], int nDir, char* fname) 
 {
   crateHistoMasps(nDir);
   //load PU weights
@@ -35,8 +35,7 @@ BSM_Analysis::BSM_Analysis(TFile* theFile, TDirectory *cdDir[], int nDir)
   PUweights->Divide(PUsim);
 
   //configure input file
-  //TFile *f = new TFile ("/eos/uscms/store/user/florez/Ntuples_Wjets/OutTree_9_1_p3o.root");
-  TFile *f = new TFile ("OutTree.root");
+  TFile *f = TFile::Open(fname);
   f->cd("TNT");
   TTree* BOOM = (TTree*)f->Get("TNT/BOOM");
 
@@ -60,9 +59,17 @@ BSM_Analysis::BSM_Analysis(TFile* theFile, TDirectory *cdDir[], int nDir)
        int smuon_counter = 0;
        int pass_tau_id[nDir] = {0};
 
+       bool pass_trigger = false;
+
        // For Trigger
-       for (int t = 0 ; t < 10; t++){
-         cout <<Trigger_names->at(t)<<endl;
+       for (int t = 0 ; t < Trigger_decision->size(); t++){
+          string theTriggers = Trigger_names->at(t);
+          //cout <<theTriggers<<endl;
+          string myTrigger   = "HLT_IsoMu24";
+          std::size_t found = theTriggers.find(myTrigger);
+          if (found!=std::string::npos){
+            if (Trigger_decision->at(t) == 1){pass_trigger = true;}
+          }
        }       
 
        for (int j = 0; j < Muon_pt->size(); j++)
@@ -70,7 +77,7 @@ BSM_Analysis::BSM_Analysis(TFile* theFile, TDirectory *cdDir[], int nDir)
             // select Z -> mumu events
             double lead_muon_pt = Muon_pt->at(0);
             if ( (Muon_pt->size() == 2) && (abs(Muon_eta->at(j)) < 2.4) && (Muon_pt->at(j) > 10.0) ){
-              if ((Muon_tight->at(j) == 1) && (Muon_isoSum->at(j) < 5.0)){
+              if ((Muon_tight->at(j) == 1) && (Muon_isoSum->at(j) < 5.0) && (pass_trigger)){
                   TagMuon_TL_vec.SetPtEtaPhiE(Muon_pt->at(j), Muon_eta->at(j), Muon_phi->at(j), Muon_energy->at(j)); 
                   charge_lead = Muon_charge->at(j);
                   lmuon_counter++;        
@@ -78,27 +85,97 @@ BSM_Analysis::BSM_Analysis(TFile* theFile, TDirectory *cdDir[], int nDir)
                   ProbeTagMuon_TL_vec.SetPtEtaPhiE(Muon_pt->at(j), Muon_eta->at(j), Muon_phi->at(j), Muon_energy->at(j));
                   charge_slead = Muon_charge->at(j);
                   smuon_counter++;
+                  double DeltaR_matched = 99999.9;
+                  double matched_tau_pt = 0;
+                  double matched_tau_eta = 0;
+                  double matched_tau_phi = 0;
+                  int    matched_tau_index = 0;
+                  bool   match = false;
+                  bool   umatch = false;
+
                   for (int t = 0; t < Tau_pt->size(); t++)
                     {
-                      if( Tau_decayModeFinding->at(t) == 1){pass_tau_id[1] = 1;}
+                     double delta_eta = Muon_eta->at(j) - Tau_eta->at(t);
+                     double delta_phi = Muon_phi->at(j) - Tau_phi->at(t);
+                     double DeltaR_muon_tau = sqrt(pow(delta_eta, 2) + pow(delta_phi, 2));
+
+                     if ( Tau_pt->size() != (t+1)){
+                       if (DeltaR_muon_tau < DeltaR_matched) {
+                          DeltaR_matched  = DeltaR_muon_tau;
+                          matched_tau_pt  = Tau_pt->at(t);
+                          matched_tau_eta = Tau_eta->at(t);
+                          matched_tau_phi = Tau_phi->at(t);
+                          matched_tau_index = t;
+                       } 
+                     }else {
+                      if (DeltaR_muon_tau < DeltaR_matched) {
+                          DeltaR_matched  = DeltaR_muon_tau;
+                          matched_tau_pt  = Tau_pt->at(t);
+                          matched_tau_eta = Tau_eta->at(t);
+                          matched_tau_phi = Tau_phi->at(t);
+                          matched_tau_index = t;
+                       }
+                       match = true;
+                        
+                     } 
+                     fillHistos_matching(0, t, umatch);
+                      if ( Tau_pt->size() == (t+1)){fillHistos_matching(0, t, match);}
+                      if( Tau_decayModeFinding->at(t) == 1){
+                         pass_tau_id[1] = 1;
+                         fillHistos_matching(1, t, umatch);
+                         fillHistos_matching(1, matched_tau_index, match);
+                          
+                      }
                       if((Tau_decayModeFinding->at(t) == 1) && 
-                         (Tau_byLooseCombinedIsolationDeltaBetaCorr3Hits->at(t) == 1)){pass_tau_id[2] = 1;}
+                         (Tau_byLooseCombinedIsolationDeltaBetaCorr3Hits->at(t) == 1)){
+                         pass_tau_id[2] = 1;
+                         fillHistos_matching(2, t, umatch);
+                         fillHistos_matching(2, matched_tau_index, match); 
+                      }
                       if((Tau_decayModeFinding->at(t) == 1) &&
-                         (Tau_byMediumCombinedIsolationDeltaBetaCorr3Hits->at(t) == 1)){pass_tau_id[3] = 1;}
+                         (Tau_byMediumCombinedIsolationDeltaBetaCorr3Hits->at(t) == 1)){
+                         pass_tau_id[3] = 1;
+                         fillHistos_matching(3, t, umatch);
+                         fillHistos_matching(3, matched_tau_index, match); 
+                      }
                       if((Tau_decayModeFinding->at(t) == 1) &&
-                         (Tau_byTightCombinedIsolationDeltaBetaCorr3Hits->at(t) == 1)){pass_tau_id[4] = 1;}
+                         (Tau_byTightCombinedIsolationDeltaBetaCorr3Hits->at(t) == 1)){
+                         pass_tau_id[4] = 1;
+                         fillHistos_matching(4, t, umatch);
+                         fillHistos_matching(4, matched_tau_index, match);
+                      }
                       if((Tau_decayModeFinding->at(t) == 1) && (Tau_byTightCombinedIsolationDeltaBetaCorr3Hits->at(t) == 1) &&
-                         (Tau_againstMuonLoose2->at(t) == 1)){pass_tau_id[5] = 1;} 
+                         (Tau_againstMuonLoose2->at(t) == 1)){
+                         pass_tau_id[5] = 1;
+                         fillHistos_matching(5, t, umatch);
+                         fillHistos_matching(5, matched_tau_index, match);
+                      } 
                       if((Tau_decayModeFinding->at(t) == 1) && (Tau_byTightCombinedIsolationDeltaBetaCorr3Hits->at(t) == 1) &&
-                         (Tau_againstMuonLoose3->at(t) == 1)){pass_tau_id[6] = 1;}
+                         (Tau_againstMuonLoose3->at(t) == 1)){
+                         pass_tau_id[6] = 1;
+                         fillHistos_matching(6, t, umatch);
+                         fillHistos_matching(6, matched_tau_index, match);
+                      }
                       if((Tau_decayModeFinding->at(t) == 1) && (Tau_byTightCombinedIsolationDeltaBetaCorr3Hits->at(t) == 1) &&
-                         (Tau_againstMuonTight2->at(t) == 1)){pass_tau_id[7] = 1;}  
+                         (Tau_againstMuonTight2->at(t) == 1)){
+                         pass_tau_id[7] = 1;
+                         fillHistos_matching(7, t, umatch);
+                         fillHistos_matching(7, matched_tau_index, match);
+                      }  
                       if((Tau_decayModeFinding->at(t) == 1) && (Tau_byTightCombinedIsolationDeltaBetaCorr3Hits->at(t) == 1) &&
-                         (Tau_againstMuonTight3->at(t) == 1)){pass_tau_id[8] = 1;}
+                         (Tau_againstMuonTight3->at(t) == 1)){
+                         pass_tau_id[8] = 1;
+                         fillHistos_matching(8, t, umatch);
+                         fillHistos_matching(8, matched_tau_index, match);
+                      }
                       if((Tau_decayModeFinding->at(t) == 1) && (Tau_byTightIsolationMVA3newDMwLT->at(t) == 1) &&
-                         (Tau_againstMuonTight3->at(t) == 1)){pass_tau_id[9] = 1;}
+                         (Tau_againstMuonTight3->at(t) == 1)){
+                         pass_tau_id[9] = 1;
+                         fillHistos_matching(9, t, umatch);
+                         fillHistos_matching(9, matched_tau_index, match);
+                      }
                    }
-              }               
+              }
                 
             }
          }
@@ -110,12 +187,23 @@ BSM_Analysis::BSM_Analysis(TFile* theFile, TDirectory *cdDir[], int nDir)
           _hmap_diMuon_mass[0]->Fill((TagMuon_TL_vec + ProbeTagMuon_TL_vec).M());
           _hmap_muon_pT[0]->Fill(ProbeTagMuon_TL_vec.Pt());
           _hmap_muon_eta[0]->Fill(ProbeTagMuon_TL_vec.Eta());
+          _hmap_muon_phi[0]->Fill(ProbeTagMuon_TL_vec.Phi());
+          _hmap_diMuon_mass_fail[0]->Fill((TagMuon_TL_vec + ProbeTagMuon_TL_vec).M());
+          _hmap_muon_pT_fail[0]->Fill(ProbeTagMuon_TL_vec.Pt());
+          _hmap_muon_eta_fail[0]->Fill(ProbeTagMuon_TL_vec.Eta());
+          _hmap_muon_phi_fail[0]->Fill(ProbeTagMuon_TL_vec.Phi());
         }
         for (int i = 1; i < nDir; i++){
           if ((charge_product == -1) && (passMuonPt) && (pass_tau_id[i] == 1)){
             _hmap_diMuon_mass[i]->Fill((TagMuon_TL_vec + ProbeTagMuon_TL_vec).M());
             _hmap_muon_pT[i]->Fill(ProbeTagMuon_TL_vec.Pt());
             _hmap_muon_eta[i]->Fill(ProbeTagMuon_TL_vec.Eta());
+            _hmap_muon_phi[i]->Fill(ProbeTagMuon_TL_vec.Phi());
+          } else if ((charge_product == -1) && (passMuonPt) && (pass_tau_id[i] == 0)) {
+            _hmap_diMuon_mass_fail[i]->Fill((TagMuon_TL_vec + ProbeTagMuon_TL_vec).M());
+            _hmap_muon_pT_fail[i]->Fill(ProbeTagMuon_TL_vec.Pt());
+            _hmap_muon_eta_fail[i]->Fill(ProbeTagMuon_TL_vec.Eta());
+            _hmap_muon_phi_fail[i]->Fill(ProbeTagMuon_TL_vec.Phi());
           }
         }
      }
@@ -126,6 +214,19 @@ BSM_Analysis::BSM_Analysis(TFile* theFile, TDirectory *cdDir[], int nDir)
        _hmap_diMuon_mass[d]->Write();
        _hmap_muon_pT[d]->Write();
        _hmap_muon_eta[d]->Write();
+       _hmap_muon_phi[d]->Write();
+       _hmap_diMuon_mass_fail[d]->Write();
+       _hmap_muon_pT_fail[d]->Write();
+       _hmap_muon_eta_fail[d]->Write();
+       _hmap_muon_phi_fail[d]->Write();
+       _hmap_taus_probe_muon_wo_matching_pT[d]->Write();
+       _hmap_taus_probe_muon_wo_matching_eta[d]->Write();
+       _hmap_taus_probe_muon_wo_matching_phi[d]->Write();
+       _hmap_taus_probe_muon_w_matching_pT[d]->Write();
+       _hmap_taus_probe_muon_w_matching_eta[d]->Write();
+       _hmap_taus_probe_muon_w_matching_phi[d]->Write();
+       _hmap_taus_probe_muon_w_matching_charge[d]->Write();
+       _hmap_taus_probe_muon_w_matching_nprongs[d]->Write();
      } 
    theFile->Close();
 }
@@ -135,13 +236,46 @@ BSM_Analysis::~BSM_Analysis()
   // do anything here that needs to be done at desctruction time
 }
 
+void BSM_Analysis::fillHistos_matching(int dir, int tau, bool match){
+
+if(match) {
+   _hmap_taus_probe_muon_w_matching_pT[dir]->Fill(Tau_pt->at(tau));
+   _hmap_taus_probe_muon_w_matching_eta[dir]->Fill(Tau_eta->at(tau));
+   _hmap_taus_probe_muon_w_matching_phi[dir]->Fill(Tau_phi->at(tau));
+   _hmap_taus_probe_muon_w_matching_charge[dir]->Fill(Tau_charge->at(tau));
+   _hmap_taus_probe_muon_w_matching_nprongs[dir]->Fill(Tau_nProngs->at(tau));
+   
+}else {
+  _hmap_taus_probe_muon_wo_matching_pT[dir]->Fill(Tau_pt->at(tau));
+  _hmap_taus_probe_muon_wo_matching_eta[dir]->Fill(Tau_eta->at(tau));
+  _hmap_taus_probe_muon_wo_matching_phi[dir]->Fill(Tau_phi->at(tau));
+}
+
+}
+
+
 void BSM_Analysis::crateHistoMasps (int directories)
 {
    for (int i = 0; i < directories; i++)
      {
-       _hmap_diMuon_mass[i] = new TH1F("diMuonMass", "m_{#mu, #mu}", 300., 0., 300.); 
-       _hmap_muon_pT[i]     = new TH1F("muon_pT", "#mu p_{T}", 300, 0., 300.);
-       _hmap_muon_eta[i]    = new TH1F("muon_eta", "#mu #eta", 50, -2.5, 2.5);
+       // Muon distributions
+       _hmap_diMuon_mass[i]      = new TH1F("diMuonMass",      "m_{#mu, #mu}", 300., 0., 300.); 
+       _hmap_muon_pT[i]          = new TH1F("muon_pT",         "#mu p_{T}",    300, 0., 300.);
+       _hmap_muon_eta[i]         = new TH1F("muon_eta",        "#mu #eta",     50, -2.5, 2.5);
+       _hmap_muon_phi[i]         = new TH1F("muon_phi",        "#mu #phi",     70, -3.5, 3.5);
+       _hmap_diMuon_mass_fail[i] = new TH1F("diMuonMass_fail", "m_{#mu, #mu}", 300., 0., 300.);
+       _hmap_muon_pT_fail[i]     = new TH1F("muon_pT_fail",    "#mu p_{T}",    300, 0., 300.);
+       _hmap_muon_eta_fail[i]    = new TH1F("muon_eta_fail",   "#mu #eta",     50, -2.5, 2.5);
+       _hmap_muon_phi_fail[i]    = new TH1F("muon_phi_fail",   "#mu #phi",     70, -3.5, 3.5);
+       // tau distributions
+       _hmap_taus_probe_muon_wo_matching_pT[i]     = new TH1F("taus_probe_muon_wo_matching_pT",  "#tau p_{T}", 300, 0., 300.);
+       _hmap_taus_probe_muon_wo_matching_eta[i]    = new TH1F("taus_probe_muon_wo_matching_eta", "#tau #eta",  50, -2.5, 2.5);
+       _hmap_taus_probe_muon_wo_matching_phi[i]    = new TH1F("taus_probe_muon_wo_matching_phi", "#tau #phi",  70, -3.5, 3.5);
+       _hmap_taus_probe_muon_w_matching_pT[i]      = new TH1F("taus_probe_muon_w_matching_pT",   "#tau p_{T}", 300, 0., 300.);
+       _hmap_taus_probe_muon_w_matching_eta[i]     = new TH1F("taus_probe_muon_w_matching_eta",  "#tau #eta",  50, -2.5, 2.5);
+       _hmap_taus_probe_muon_w_matching_phi[i]     = new TH1F("taus_probe_muon_w_matching_phi",  "#tau #phi",  70, -3.5, 3.5);
+       _hmap_taus_probe_muon_w_matching_charge[i]  = new TH1F("taus_probe_muon_w_matching_charge", "Q (#tau)",  11, -5.5, 5.5);
+       _hmap_taus_probe_muon_w_matching_nprongs[i] = new TH1F("taus_probe_muon_w_matching_nprongs", "N_{prongs}(#tau)", 11,  -5.5, 5.5);
      }
 }
 
@@ -228,9 +362,11 @@ void BSM_Analysis::setBranchAddress(TTree* BOOM)
    Jet_photonEnergy = 0;
    UncorrJet_pt = 0;
    Trigger_names = 0;
+   Trigger_decision = 0;
    // Set branch addresses and branch pointers
    if(!BOOM) return;
    BOOM->SetBranchAddress("Trigger_names", &Trigger_names, &b_Trigger_names);
+   BOOM->SetBranchAddress("Trigger_decision", &Trigger_decision, &b_Trigger_decision);
    BOOM->SetBranchAddress("Muon_pt", &Muon_pt, &b_Muon_pt);
    BOOM->SetBranchAddress("Muon_eta", &Muon_eta, &b_Muon_eta);
    BOOM->SetBranchAddress("Muon_phi", &Muon_phi, &b_Muon_phi);

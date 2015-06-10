@@ -29,18 +29,35 @@ using namespace std;
 
 class BSM_Analysis {
 public :
-   BSM_Analysis(TFile*, TDirectory* dir[], int nDir);
+   BSM_Analysis(TFile*, TDirectory* dir[], int nDir, char*);
    ~BSM_Analysis();
 
    // create Histo maps
    void crateHistoMasps (int);
+   void fillHistos_matching(int, int, bool);
    // Define maps for histograms
+   // For muons
    std::map<unsigned int, TH1*> _hmap_muon_pT;
    std::map<unsigned int, TH1*> _hmap_muon_eta;
+   std::map<unsigned int, TH1*> _hmap_muon_phi;
    std::map<unsigned int, TH1*> _hmap_diMuon_mass;
+   std::map<unsigned int, TH1*> _hmap_muon_pT_fail;
+   std::map<unsigned int, TH1*> _hmap_muon_eta_fail;
+   std::map<unsigned int, TH1*> _hmap_diMuon_mass_fail;
+   std::map<unsigned int, TH1*> _hmap_muon_phi_fail;
+   // For Taus
+   std::map<unsigned int, TH1*> _hmap_taus_probe_muon_w_matching_pT;
+   std::map<unsigned int, TH1*> _hmap_taus_probe_muon_w_matching_eta;
+   std::map<unsigned int, TH1*> _hmap_taus_probe_muon_w_matching_phi;
+   std::map<unsigned int, TH1*> _hmap_taus_probe_muon_w_matching_charge;
+   std::map<unsigned int, TH1*> _hmap_taus_probe_muon_w_matching_nprongs;
+   std::map<unsigned int, TH1*> _hmap_taus_probe_muon_wo_matching_pT;
+   std::map<unsigned int, TH1*> _hmap_taus_probe_muon_wo_matching_eta;
+   std::map<unsigned int, TH1*> _hmap_taus_probe_muon_wo_matching_phi;
    // Define Branches
    void setBranchAddress(TTree* BOOM);
    vector<string>  *Trigger_names;
+   vector<int>     *Trigger_decision;
    vector<double>  *Muon_pt;
    vector<double>  *Muon_eta;
    vector<double>  *Muon_phi;
@@ -135,6 +152,7 @@ public :
 
    // List of branches
    TBranch        *b_Trigger_names;
+   TBranch        *b_Trigger_decision;
    TBranch        *b_Muon_pt;   //!
    TBranch        *b_Muon_eta;   //!
    TBranch        *b_Muon_phi;   //!
